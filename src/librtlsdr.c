@@ -259,6 +259,10 @@ int r820t_set_gain(void *dev, int gain) {
 	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
 	return r82xx_set_gain(&devt->r82xx_p, 1, gain);
 }
+int r820t_set_if_gain(void *dev, int stage, int gain) {
+	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
+	return r82xx_set_if_gain(&devt->r82xx_p, stage, gain);
+}
 int r820t_set_gain_mode(void *dev, int manual) {
 	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
 	return r82xx_set_gain(&devt->r82xx_p, manual, 0);
@@ -291,12 +295,12 @@ static rtlsdr_tuner_iface_t tuners[] = {
 	},
 	{
 		r820t_init, r820t_exit,
-		r820t_set_freq, r820t_set_bw, r820t_set_gain, NULL,
+		r820t_set_freq, r820t_set_bw, r820t_set_gain, r820t_set_if_gain,
 		r820t_set_gain_mode
 	},
 	{
 		r820t_init, r820t_exit,
-		r820t_set_freq, r820t_set_bw, r820t_set_gain, NULL,
+		r820t_set_freq, r820t_set_bw, r820t_set_gain, r820t_set_if_gain,
 		r820t_set_gain_mode
 	},
 };
@@ -967,10 +971,28 @@ int rtlsdr_get_tuner_gains(rtlsdr_dev_t *dev, int *gains)
 				       63, 65, 67, 68, 70, 71, 179, 181, 182,
 				       184, 186, 188, 191, 197 };
 	const int fc2580_gains[] = { 0 /* no gain values */ };
-	const int r82xx_gains[] = { 0, 9, 14, 27, 37, 77, 87, 125, 144, 157,
-				     166, 197, 207, 229, 254, 280, 297, 328,
-				     338, 364, 372, 386, 402, 421, 434, 439,
-				     445, 480, 496 };
+	const int r82xx_gains[] = { 0, 13, 30, 31, 44, 48, 61, 62,
+                                    67, 76, 77, 80, 90, 91, 99, 103,
+                                    104, 105, 115, 117, 118, 128, 131, 136,
+                                    141, 144, 148, 150, 151, 152, 154, 157,
+                                    162, 163, 164, 166, 169, 174, 176, 178,
+                                    179, 181, 186, 188, 189, 192, 193, 194,
+                                    197, 200, 201, 202, 206, 207, 214, 215,
+                                    217, 218, 220, 225, 228, 229, 230, 231,
+                                    232, 237, 241, 243, 244, 246, 251, 252,
+                                    256, 257, 258, 259, 260, 261, 262, 270,
+                                    271, 275, 277, 278, 280, 284, 285, 288,
+                                    289, 291, 292, 293, 294, 297, 298, 299,
+                                    301, 302, 303, 304, 306, 308, 312, 313,
+                                    314, 316, 317, 318, 319, 320, 323, 326,
+                                    327, 328, 331, 334, 337, 341, 342, 343,
+                                    344, 345, 348, 353, 356, 357, 359, 362,
+                                    363, 367, 368, 369, 371, 374, 377, 378,
+                                    381, 383, 384, 386, 387, 389, 390, 392,
+                                    394, 397, 398, 401, 402, 404, 405, 407,
+                                    413, 414, 415, 417, 419, 421, 425, 426,
+                                    430, 432, 436, 438, 443, 444, 445, 450,
+                                    458, 462, 463, 464, 465, 468, 469, 470 };
 	const int unknown_gains[] = { 0 /* no gain values */ };
 
 	const int *ptr = NULL;

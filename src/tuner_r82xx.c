@@ -926,22 +926,76 @@ static int r82xx_read_gain(struct r82xx_priv *priv)
 	return ((data[3] & 0x0f) << 1) + ((data[3] & 0xf0) >> 4);
 }
 
-/* measured with a Racal 6103E GSM test set at 928 MHz with -60 dBm
- * input power, for raw results see:
- * http://steve-m.de/projects/rtl-sdr/gain_measurement/r820t/
+/* improved gain control:
+ * Signal source:
+ *   FlockLab dpp2 module output power -9dB + 70dB sma attenuators at 866.5 MHz
+ * RTL settings
+ *   f_center: 866 MHz
+ *   samprate: 2.4 MSps
+ *
+ * Reference:
+ *   Tektronix RSA306: -98.46 dBm correspond to -89.10 dB (LNA = 0, Mixer = 0, VGA = 8)
+ *   (9.36 dB gain for VGA = 0x08)
+ *
+ * Spectrum: scipy.signal.welch() nperseg=2**15
+ * Window: Blackmann-Harris
+ *
+ * VGA gain:
+ *  - too low: peaks in the spectrum probably caused by quantization noise
+ *  - too high: overall noise floor increased w/o SNR improvement
+ *  A value in the range [0x7,0x9] seems suitable, using 0x8 as in the original implementation
+ *
+ * LNA/Mixer gain:
+ *  For vga=8, the peak of all combinations was meassured, if two pairs resulted in the same gain,
+ *  the one with the higher peak to mean ratio was chosen
  */
 
-#define VGA_BASE_GAIN	-47
-static const int r82xx_vga_gain_steps[]  = {
-	0, 26, 26, 30, 42, 35, 24, 13, 14, 32, 36, 34, 35, 37, 35, 36
-};
-
-static const int r82xx_lna_gain_steps[]  = {
-	0, 9, 13, 40, 38, 13, 31, 22, 26, 31, 26, 14, 19, 5, 35, 13
-};
-
-static const int r82xx_mixer_gain_steps[]  = {
-	0, 5, 10, 10, 19, 9, 10, 25, 17, 10, 8, 16, 13, 6, 3, -8
+/* [gain in 0.1 dB, lna, mixer]*/
+static const int r82xx_lna_mixer_gain[][3] = {
+    {  0,  0,  0}, { 13,  0,  1}, { 30,  1,  0}, { 31,  0,  2},
+    { 44,  1,  1}, { 48,  0,  3}, { 61,  1,  2}, { 62,  0,  4},
+    { 67,  2,  0}, { 76,  0,  5}, { 77,  1,  3}, { 80,  2,  1},
+    { 90,  0,  6}, { 91,  1,  4}, { 99,  2,  2}, {103,  0,  7},
+    {104,  1,  5}, {105,  3,  0}, {115,  2,  3}, {117,  3,  1},
+    {118,  1,  6}, {128,  2,  4}, {131,  1,  7}, {136,  4,  0},
+    {141,  2,  5}, {144,  1,  8}, {148,  4,  1}, {150,  5,  0},
+    {151,  3,  3}, {152,  0, 11}, {154,  2,  6}, {157,  1,  9},
+    {162,  5,  1}, {163,  0, 15}, {164,  4,  2}, {166,  2,  7},
+    {169,  1, 10}, {174,  6,  0}, {176,  3,  5}, {178,  4,  3},
+    {179,  5,  2}, {181,  1, 11}, {186,  6,  1}, {188,  4,  4},
+    {189,  3,  6}, {192,  2,  9}, {193,  1, 13}, {194,  5,  3},
+    {197,  7,  0}, {200,  4,  5}, {201,  3,  7}, {202,  6,  2},
+    {206,  5,  4}, {207,  7,  1}, {214,  4,  6}, {215,  3,  8},
+    {217,  6,  3}, {218,  5,  5}, {220,  8,  0}, {225,  7,  2},
+    {228,  4,  7}, {229,  3,  9}, {230,  6,  4}, {231,  5,  6},
+    {232,  8,  1}, {237,  9,  0}, {241,  7,  3}, {243, 10,  0},
+    {244,  6,  5}, {246, 11,  0}, {251,  9,  1}, {252,  8,  2},
+    {256,  7,  4}, {257,  3, 11}, {258, 10,  1}, {259,  4,  9},
+    {260,  6,  6}, {261, 12,  0}, {262,  5,  8}, {270,  8,  3},
+    {271, 13,  0}, {275, 12,  1}, {277,  5,  9}, {278, 10,  2},
+    {280, 11,  2}, {284, 13,  1}, {285,  8,  4}, {288, 14,  0},
+    {289,  6,  8}, {291,  5, 10}, {292, 12,  2}, {293, 10,  3},
+    {294, 15,  0}, {297, 11,  3}, {298,  8,  5}, {299,  7,  7},
+    {301, 14,  1}, {302, 13,  2}, {303,  6,  9}, {304,  5, 11},
+    {306, 15,  1}, {308, 12,  3}, {312,  8,  6}, {313, 11,  4},
+    {314,  7,  8}, {316,  9,  5}, {317,  5, 15}, {318,  6, 10},
+    {319, 13,  3}, {320, 14,  2}, {323, 12,  4}, {326, 15,  2},
+    {327, 11,  5}, {328,  7,  9}, {331,  9,  6}, {334, 13,  4},
+    {337, 14,  3}, {341,  8,  8}, {342, 15,  3}, {343,  7, 10},
+    {344,  6, 15}, {345,  9,  7}, {348, 13,  5}, {353, 14,  4},
+    {356,  8,  9}, {357, 15,  4}, {359,  9,  8}, {362, 13,  6},
+    {363, 10,  8}, {367, 14,  5}, {368, 12,  7}, {369,  7, 14},
+    {371, 15,  5}, {374,  9,  9}, {377, 13,  7}, {378, 10,  9},
+    {381, 14,  6}, {383, 12,  8}, {384,  8, 11}, {386, 15,  6},
+    {387, 11,  9}, {389,  9, 10}, {390, 13,  8}, {392, 10, 10},
+    {394, 14,  7}, {397,  8, 12}, {398, 12,  9}, {401, 15,  7},
+    {402, 11, 10}, {404, 10, 11}, {405, 13,  9}, {407, 14,  8},
+    {413, 12, 10}, {414, 11, 11}, {415, 15,  8}, {417, 10, 14},
+    {419, 13, 10}, {421, 14,  9}, {425, 11, 15}, {426, 12, 11},
+    {430, 15,  9}, {432, 13, 11}, {436, 14, 10}, {438, 12, 13},
+    {443, 13, 15}, {444, 13, 14}, {445, 15, 10}, {450, 14, 11},
+    {458, 15, 11}, {462, 14, 12}, {463, 14, 13}, {464, 14, 14},
+    {465, 15, 15}, {468, 15, 13}, {469, 15, 14}, {470, 15, 12}
 };
 
 int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain)
@@ -949,7 +1003,7 @@ int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain)
 	int rc;
 
 	if (set_manual_gain) {
-		int i, total_gain = 0;
+                unsigned int i, u, l;
 		uint8_t mix_index = 0, lna_index = 0;
 		uint8_t data[4];
 
@@ -972,17 +1026,24 @@ int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain)
 		if (rc < 0)
 			return rc;
 
-		for (i = 0; i < 15; i++) {
-			if (total_gain >= gain)
+                l=0;
+                u=(sizeof(r82xx_lna_mixer_gain)/sizeof(r82xx_lna_mixer_gain[0]))-1;
+                i=(u+l)/2;
+                while(u > l) {
+                        if(r82xx_lna_mixer_gain[i][0] == gain)
 				break;
-
-			total_gain += r82xx_lna_gain_steps[++lna_index];
-
-			if (total_gain >= gain)
-				break;
-
-			total_gain += r82xx_mixer_gain_steps[++mix_index];
+                        if(r82xx_lna_mixer_gain[i][0] < gain)
+                        l=i+1;
+                    if(r82xx_lna_mixer_gain[i][0] > gain)
+                        u=i-1;
+                    i=(u+l)/2;
 		}
+                if ( i<(sizeof(r82xx_lna_mixer_gain)/sizeof(r82xx_lna_mixer_gain[0]))-1
+                     && r82xx_lna_mixer_gain[i][0] < gain)
+                    i++;
+
+                lna_index=r82xx_lna_mixer_gain[i][1];
+                mix_index=r82xx_lna_mixer_gain[i][2];
 
 		/* set LNA gain */
 		rc = r82xx_write_reg_mask(priv, 0x05, lna_index, 0x0f);
@@ -1009,6 +1070,51 @@ int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain)
 		if (rc < 0)
 			return rc;
 	}
+
+	return 0;
+}
+
+int r82xx_set_if_gain(struct r82xx_priv *priv, int stage, int gain)
+{
+	int rc;
+        uint8_t data[4];
+
+        /* LNA auto off */
+        rc = r82xx_write_reg_mask(priv, 0x05, 0x10, 0x10);
+        if (rc < 0)
+            return rc;
+
+        /* Mixer auto off */
+        rc = r82xx_write_reg_mask(priv, 0x07, 0, 0x10);
+        if (rc < 0)
+            return rc;
+
+        rc = r82xx_read(priv, 0x00, data, sizeof(data));
+        if (rc < 0)
+            return rc;
+
+        switch(stage)
+        {
+        case 0:
+            /* set LNA gain */
+            rc = r82xx_write_reg_mask(priv, 0x05, gain&0xf, 0x0f);
+            if (rc < 0)
+                return rc;
+            break;
+        case 1:
+            /* set Mixer gain */
+            rc = r82xx_write_reg_mask(priv, 0x07, gain&0xf, 0x0f);
+            if (rc < 0)
+                return rc;
+            break;
+        case 2:
+            /* set VGA gain */
+            rc = r82xx_write_reg_mask(priv, 0x0c, gain&0xf, 0x9f);
+            if (rc < 0)
+                return rc;
+        default:
+            return -1;
+        }
 
 	return 0;
 }
